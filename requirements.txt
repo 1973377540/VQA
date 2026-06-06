@@ -1,0 +1,2 @@
+flask>=3.0
+dashscope>=1.20

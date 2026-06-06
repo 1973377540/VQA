@@ -3,435 +3,506 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>视觉问答系统 (VQA)</title>
+    <title>视觉问答 + RAG 知识库</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5a6fd6;
+            --secondary: #764ba2;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --danger: #f44336;
+            --bg: #f5f7fa;
+            --card: #fff;
+            --text: #333;
+            --text-light: #666;
+            --border: #e0e4e8;
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             min-height: 100vh;
             padding: 20px;
+            color: var(--text);
         }
 
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
+        .container { max-width: 1100px; margin: 0 auto; }
 
-        header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
-        }
+        header { text-align: center; color: #fff; margin-bottom: 25px; }
+        header h1 { font-size: 2.2rem; margin-bottom: 6px; }
+        header p { opacity: .85; font-size: 1rem; }
 
-        header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            background: rgba(255,255,255,.15);
+            border-radius: 12px 12px 0 0;
+            padding: 6px 6px 0;
         }
-
-        header p {
-            font-size: 1.1rem;
-            opacity: 0.9;
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: rgba(255,255,255,.2);
+            color: rgba(255,255,255,.7);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 10px 10px 0 0;
+            transition: all .2s;
+        }
+        .tab-btn:hover { background: rgba(255,255,255,.3); }
+        .tab-btn.active {
+            background: var(--card);
+            color: var(--primary);
         }
 
         .card {
-            background: white;
-            border-radius: 16px;
-            padding: 30px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            background: var(--card);
+            border-radius: 0 0 16px 16px;
+            padding: 28px;
+            box-shadow: 0 10px 40px rgba(0,0,0,.15);
             margin-bottom: 20px;
         }
 
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* Upload area */
         .upload-area {
-            border: 3px dashed #ddd;
+            border: 3px dashed var(--border);
             border-radius: 12px;
-            padding: 40px;
+            padding: 30px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all .3s;
             position: relative;
-            overflow: hidden;
         }
-
-        .upload-area:hover {
-            border-color: #667eea;
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--primary);
             background: #f8f9ff;
         }
+        .upload-area.has-image { padding: 10px; }
+        .upload-area.has-doc { border-style: solid; border-color: var(--success); background: #f0fff0; }
+        .upload-icon { font-size: 2.5rem; margin-bottom: 10px; }
+        .upload-text { color: var(--text-light); font-size: 1rem; }
+        .upload-hint { color: #999; font-size: .85rem; margin-top: 6px; }
+        #imagePreview { max-width: 100%; max-height: 300px; border-radius: 8px; display: none; }
+        .doc-info { display: none; font-size: 1.1rem; color: var(--success); font-weight: 600; }
+        .doc-info.show { display: block; }
 
-        .upload-area.dragover {
-            border-color: #667eea;
-            background: #f0f2ff;
-        }
+        input[type="file"] { display: none; }
 
-        .upload-area.has-image {
-            padding: 10px;
-        }
-
-        .upload-icon {
-            font-size: 3rem;
-            margin-bottom: 15px;
-        }
-
-        .upload-text {
-            color: #666;
-            font-size: 1.1rem;
-        }
-
-        .upload-hint {
-            color: #999;
-            font-size: 0.9rem;
-            margin-top: 8px;
-        }
-
-        #fileInput {
-            display: none;
-        }
-
-        #imagePreview {
-            max-width: 100%;
-            max-height: 400px;
-            border-radius: 8px;
-            display: none;
-        }
-
-        .question-section {
-            margin-top: 25px;
-        }
-
-        .question-section label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: #333;
-            font-size: 1.1rem;
-        }
-
-        .input-group {
-            display: flex;
-            gap: 12px;
-        }
-
+        /* Question input */
+        .q-section { margin-top: 20px; }
+        .q-section label { display: block; font-weight: 600; margin-bottom: 8px; }
+        .input-group { display: flex; gap: 10px; }
         #questionInput {
             flex: 1;
-            padding: 14px 18px;
-            border: 2px solid #e0e0e0;
+            padding: 12px 16px;
+            border: 2px solid var(--border);
             border-radius: 10px;
             font-size: 1rem;
-            transition: border-color 0.3s;
+            transition: border-color .3s;
         }
+        #questionInput:focus { outline: none; border-color: var(--primary); }
 
-        #questionInput:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        #askBtn {
-            padding: 14px 32px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
+        .btn {
+            padding: 12px 28px;
             border: none;
             border-radius: 10px;
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform .2s, box-shadow .2s;
+            white-space: nowrap;
         }
-
-        #askBtn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        .btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #fff;
         }
-
-        #askBtn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
+        .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(102,126,234,.4); }
+        .btn-sm { padding: 8px 16px; font-size: .9rem; }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
         }
+        .btn-outline:hover { background: var(--primary); color: #fff; }
 
-        .answer-section {
-            margin-top: 25px;
-            display: none;
-        }
-
-        .answer-section.show {
-            display: block;
-        }
-
-        .answer-header {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 12px;
-            font-size: 1.1rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
+        /* Answer */
+        .answer-section { margin-top: 20px; display: none; }
+        .answer-section.show { display: block; }
+        .answer-header { font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
         .answer-content {
-            background: #f8f9fa;
+            background: var(--bg);
             border-radius: 12px;
-            padding: 20px;
+            padding: 18px;
             line-height: 1.8;
             color: #444;
-            font-size: 1rem;
             white-space: pre-wrap;
         }
-
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 30px;
+        .rag-badge {
+            display: inline-block;
+            background: var(--success);
+            color: #fff;
+            font-size: .75rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
         }
 
-        .loading.show {
-            display: block;
-        }
-
+        /* Loading */
+        .loading { display: none; text-align: center; padding: 25px; }
+        .loading.show { display: block; }
         .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            width: 36px; height: 36px;
+            border: 4px solid #eee;
+            border-top-color: var(--primary);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            animation: spin .8s linear infinite;
+            margin: 0 auto 12px;
         }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .loading-text {
-            color: #666;
-            font-size: 1rem;
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         .error {
-            background: #fff0f0;
-            color: #d32f2f;
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin-top: 15px;
-            display: none;
+            background: #fff0f0; color: var(--danger);
+            padding: 12px 16px; border-radius: 10px;
+            margin-top: 12px; display: none;
         }
+        .error.show { display: block; }
 
-        .error.show {
-            display: block;
-        }
-
-        .quick-questions {
-            margin-top: 15px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
+        .quick-q-list { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
         .quick-q {
-            padding: 8px 16px;
+            padding: 6px 14px;
             background: #f0f2ff;
             border: 1px solid #dde3ff;
             border-radius: 20px;
-            font-size: 0.9rem;
-            color: #667eea;
+            font-size: .85rem;
+            color: var(--primary);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all .2s;
         }
+        .quick-q:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 
-        .quick-q:hover {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
+        /* Knowledge base */
+        .kb-stats {
+            display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;
         }
+        .stat-card {
+            flex: 1; min-width: 120px;
+            background: var(--bg); border-radius: 10px;
+            padding: 14px; text-align: center;
+        }
+        .stat-num { font-size: 1.8rem; font-weight: 700; color: var(--primary); }
+        .stat-label { font-size: .85rem; color: var(--text-light); }
 
-        footer {
-            text-align: center;
-            color: rgba(255,255,255,0.8);
-            margin-top: 30px;
-            font-size: 0.9rem;
+        .doc-list { margin-top: 16px; }
+        .doc-list h3 { margin-bottom: 10px; }
+        .doc-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 14px; border: 1px solid var(--border);
+            border-radius: 8px; margin-bottom: 6px;
         }
+        .doc-item:hover { background: var(--bg); }
+        .doc-name { font-weight: 500; }
+        .doc-chunks { color: var(--text-light); font-size: .85rem; }
+        .empty-msg { text-align: center; color: #aaa; padding: 20px; }
+
+        footer { text-align: center; color: rgba(255,255,255,.7); margin-top: 20px; font-size: .85rem; }
 
         @media (max-width: 600px) {
-            header h1 { font-size: 1.8rem; }
+            header h1 { font-size: 1.6rem; }
             .input-group { flex-direction: column; }
-            .upload-area { padding: 25px; }
+            .tabs { flex-direction: column; }
+            .tab-btn { border-radius: 8px; }
+            .card { border-radius: 12px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🖼️ 视觉问答系统</h1>
-            <p>上传图片，提出问题，AI 帮你解读</p>
-        </header>
+<div class="container">
+    <header>
+        <h1>🖼️ 视觉问答 + 📚 RAG 知识库</h1>
+        <p>图片问答 · 文档检索 · 智能回答</p>
+    </header>
 
-        <div class="card">
-            <div class="upload-area" id="uploadArea">
-                <div id="uploadPlaceholder">
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="vqa">📷 视觉问答</button>
+        <button class="tab-btn" data-tab="rag">📚 RAG 知识库</button>
+    </div>
+
+    <div class="card">
+        <!-- ===== VQA Panel ===== -->
+        <div class="tab-panel active" id="panel-vqa">
+            <div class="upload-area" id="vqaUploadArea">
+                <div id="vqaPlaceholder">
                     <div class="upload-icon">📷</div>
                     <div class="upload-text">点击或拖拽上传图片</div>
-                    <div class="upload-hint">支持 JPG、PNG、GIF、WebP 格式，最大 16MB</div>
+                    <div class="upload-hint">JPG / PNG / GIF / WebP · 最大 32MB</div>
                 </div>
-                <img id="imagePreview" alt="预览图片">
-                <input type="file" id="fileInput" accept="image/*">
+                <img id="imagePreview" alt="预览">
+                <input type="file" id="vqaFile" accept="image/*">
             </div>
 
-            <div class="question-section">
-                <label>💬 你的问题</label>
+            <div class="q-section">
+                <label>💬 问题</label>
                 <div class="input-group">
-                    <input type="text" id="questionInput" placeholder="例如：这张图片里有什么？" />
-                    <button id="askBtn">提问</button>
+                    <input type="text" id="vqaQuestion" placeholder="例如：这张图片里有什么？">
+                    <button class="btn btn-primary" id="vqaAskBtn">提问</button>
                 </div>
-                <div class="quick-questions">
-                    <span class="quick-q" data-q="这张图片描绘了什么场景？">描述场景</span>
-                    <span class="quick-q" data-q="图片中有哪些人或物体？">识别人物/物体</span>
-                    <span class="quick-q" data-q="这张图片的氛围和情绪是怎样的？">分析氛围</span>
-                    <span class="quick-q" data-q="图片中有什么特别的细节？">发现细节</span>
+                <div class="quick-q-list">
+                    <span class="quick-q" data-target="vqa" data-q="这张图片描绘了什么场景？">描述场景</span>
+                    <span class="quick-q" data-target="vqa" data-q="图片中有哪些人或物体？">识别内容</span>
+                    <span class="quick-q" data-target="vqa" data-q="图片的氛围和情绪是怎样的？">分析氛围</span>
+                    <span class="quick-q" data-target="vqa" data-q="图中有什么特别的细节？">发现细节</span>
                 </div>
             </div>
 
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <div class="loading-text">AI 正在分析图片，请稍候...</div>
-            </div>
-
-            <div class="error" id="error"></div>
-
-            <div class="answer-section" id="answerSection">
-                <div class="answer-header">🤖 AI 回答</div>
-                <div class="answer-content" id="answerContent"></div>
+            <div class="loading" id="vqaLoading"><div class="spinner"></div><div class="loading-text">AI 正在分析图片…</div></div>
+            <div class="error" id="vqaError"></div>
+            <div class="answer-section" id="vqaAnswer">
+                <div class="answer-header">🤖 回答</div>
+                <div class="answer-content" id="vqaAnswerContent"></div>
             </div>
         </div>
 
-        <footer>
-            <p>Powered by Qwen VL · Built with Flask & DashScope</p>
-        </footer>
+        <!-- ===== RAG Panel ===== -->
+        <div class="tab-panel" id="panel-rag">
+            <!-- Stats -->
+            <div class="kb-stats" id="kbStats">
+                <div class="stat-card"><div class="stat-num" id="statDocs">0</div><div class="stat-label">文档数</div></div>
+                <div class="stat-card"><div class="stat-num" id="statChunks">0</div><div class="stat-label">知识块</div></div>
+            </div>
+
+            <!-- Upload doc -->
+            <div class="upload-area" id="ragUploadArea">
+                <div id="ragPlaceholder">
+                    <div class="upload-icon">📄</div>
+                    <div class="upload-text">点击或拖拽上传文档到知识库</div>
+                    <div class="upload-hint">PDF / DOCX / XLSX / TXT / MD / CSV</div>
+                </div>
+                <div class="doc-info" id="docInfo"></div>
+                <input type="file" id="ragFile" accept=".pdf,.docx,.xlsx,.xls,.txt,.md,.csv,.log">
+            </div>
+
+            <!-- Doc list -->
+            <div class="doc-list" id="docList">
+                <h3>📂 已收录文档</h3>
+                <div class="empty-msg" id="emptyDocs">知识库暂无文档，请上传</div>
+                <div id="docsContainer"></div>
+            </div>
+
+            <!-- RAG Question -->
+            <div class="q-section" style="margin-top:20px;">
+                <label>💬 基于知识库提问</label>
+                <div class="input-group">
+                    <input type="text" id="ragQuestion" placeholder="例如：公司的请假流程是什么？">
+                    <button class="btn btn-primary" id="ragAskBtn">🔍 检索回答</button>
+                </div>
+                <div class="quick-q-list">
+                    <span class="quick-q" data-target="rag" data-q="请总结知识库的主要内容">总结内容</span>
+                    <span class="quick-q" data-target="rag" data-q="有哪些关键信息？">提取关键信息</span>
+                </div>
+            </div>
+
+            <div class="loading" id="ragLoading"><div class="spinner"></div><div class="loading-text">正在检索知识库…</div></div>
+            <div class="error" id="ragError"></div>
+            <div class="answer-section" id="ragAnswer">
+                <div class="answer-header">🤖 回答 <span class="rag-badge" id="ragBadge" style="display:none;">RAG</span></div>
+                <div class="answer-content" id="ragAnswerContent"></div>
+            </div>
+        </div>
     </div>
 
-    <script>
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
-        const imagePreview = document.getElementById('imagePreview');
-        const uploadPlaceholder = document.getElementById('uploadPlaceholder');
-        const questionInput = document.getElementById('questionInput');
-        const askBtn = document.getElementById('askBtn');
-        const loading = document.getElementById('loading');
-        const error = document.getElementById('error');
-        const answerSection = document.getElementById('answerSection');
-        const answerContent = document.getElementById('answerContent');
+    <footer>Powered by Qwen-VL + RAG · Flask + FAISS + DashScope</footer>
+</div>
 
-        let selectedFile = null;
+<script>
+// ====== Tab switching ======
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    });
+});
 
-        // 上传区域点击
-        uploadArea.addEventListener('click', () => fileInput.click());
+// ====== Quick questions ======
+document.querySelectorAll('.quick-q').forEach(el => {
+    el.addEventListener('click', () => {
+        const inputId = el.dataset.target === 'vqa' ? 'vqaQuestion' : 'ragQuestion';
+        document.getElementById(inputId).value = el.dataset.q;
+        document.getElementById(inputId).focus();
+    });
+});
 
-        // 拖拽上传
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
+// ====== VQA ======
+let vqaFile = null;
+const vqaArea = document.getElementById('vqaUploadArea');
+const vqaInput = document.getElementById('vqaFile');
 
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
+vqaArea.addEventListener('click', () => vqaInput.click());
+vqaArea.addEventListener('dragover', e => { e.preventDefault(); vqaArea.classList.add('dragover'); });
+vqaArea.addEventListener('dragleave', () => vqaArea.classList.remove('dragover'));
+vqaArea.addEventListener('drop', e => { e.preventDefault(); vqaArea.classList.remove('dragover'); if(e.dataTransfer.files[0]?.type.startsWith('image/')) handleVQAFile(e.dataTransfer.files[0]); });
+vqaInput.addEventListener('change', e => { if(e.target.files[0]) handleVQAFile(e.target.files[0]); });
 
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type.startsWith('image/')) {
-                handleFile(files[0]);
-            }
-        });
+function handleVQAFile(f) {
+    vqaFile = f;
+    const r = new FileReader();
+    r.onload = e => {
+        document.getElementById('imagePreview').src = e.target.result;
+        document.getElementById('imagePreview').style.display = 'block';
+        document.getElementById('vqaPlaceholder').style.display = 'none';
+        vqaArea.classList.add('has-image');
+    };
+    r.readAsDataURL(f);
+}
 
-        // 文件选择
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFile(e.target.files[0]);
-            }
-        });
+document.getElementById('vqaAskBtn').addEventListener('click', () => askVQA());
+document.getElementById('vqaQuestion').addEventListener('keypress', e => { if(e.key==='Enter') askVQA(); });
 
-        function handleFile(file) {
-            selectedFile = file;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                imagePreview.src = e.target.result;
-                imagePreview.style.display = 'block';
-                uploadPlaceholder.style.display = 'none';
-                uploadArea.classList.add('has-image');
-            };
-            reader.readAsDataURL(file);
+async function askVQA() {
+    if(!vqaFile) return showError('vqaError','请先上传一张图片');
+    const q = document.getElementById('vqaQuestion').value.trim();
+    if(!q) return showError('vqaError','请输入问题');
+
+    showLoading('vqaLoading', true);
+    hide('vqaAnswer'); hide('vqaError');
+    document.getElementById('vqaAskBtn').disabled = true;
+
+    const fd = new FormData();
+    fd.append('image', vqaFile); fd.append('question', q);
+
+    try {
+        const res = await fetch('/ask', { method:'POST', body: fd });
+        const data = await res.json();
+        if(data.success) { showAnswer('vqaAnswerContent', data.answer, 'vqaAnswer'); }
+        else showError('vqaError', data.error);
+    } catch(e) { showError('vqaError','请求失败'); }
+    finally { showLoading('vqaLoading', false); document.getElementById('vqaAskBtn').disabled = false; }
+}
+
+// ====== RAG ======
+let ragFile = null;
+const ragArea = document.getElementById('ragUploadArea');
+const ragInput = document.getElementById('ragFile');
+
+ragArea.addEventListener('click', () => ragInput.click());
+ragArea.addEventListener('dragover', e => { e.preventDefault(); ragArea.classList.add('dragover'); });
+ragArea.addEventListener('dragleave', () => ragArea.classList.remove('dragover'));
+ragArea.addEventListener('drop', e => { e.preventDefault(); ragArea.classList.remove('dragover'); if(e.dataTransfer.files[0]) handleRAGFile(e.dataTransfer.files[0]); });
+ragInput.addEventListener('change', e => { if(e.target.files[0]) handleRAGFile(e.target.files[0]); });
+
+function handleRAGFile(f) {
+    ragFile = f;
+    document.getElementById('docInfo').textContent = '📎 ' + f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)';
+    document.getElementById('docInfo').classList.add('show');
+    document.getElementById('ragPlaceholder').style.display = 'none';
+    ragArea.classList.add('has-doc');
+    uploadDoc();
+}
+
+async function uploadDoc() {
+    if(!ragFile) return;
+    const fd = new FormData();
+    fd.append('file', ragFile);
+
+    try {
+        const res = await fetch('/api/knowledge/upload', { method:'POST', body: fd });
+        const data = await res.json();
+        if(data.success) {
+            document.getElementById('docInfo').textContent = '✅ ' + data.filename + ' → ' + data.chunk_count + ' 个知识块';
+            loadDocs(); loadStats();
+        } else {
+            showError('ragError', data.error);
         }
+    } catch(e) { showError('ragError','上传失败'); }
+}
 
-        // 快捷问题
-        document.querySelectorAll('.quick-q').forEach(el => {
-            el.addEventListener('click', () => {
-                questionInput.value = el.dataset.q;
-                questionInput.focus();
-            });
-        });
+async function loadDocs() {
+    try {
+        const res = await fetch('/api/knowledge/docs');
+        const docs = await res.json();
+        const container = document.getElementById('docsContainer');
+        const empty = document.getElementById('emptyDocs');
+        if(docs.length === 0) { empty.style.display = 'block'; container.innerHTML = ''; return; }
+        empty.style.display = 'none';
+        container.innerHTML = docs.map(d => `
+            <div class="doc-item">
+                <span><span class="doc-name">📄 ${d.filename}</span> <span class="doc-chunks">(${d.chunk_count} 块)</span></span>
+                <button class="btn btn-sm btn-danger" onclick="removeDoc('${d.doc_id}')">删除</button>
+            </div>
+        `).join('');
+    } catch(e) {}
+}
 
-        // 提问
-        askBtn.addEventListener('click', askQuestion);
-        questionInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') askQuestion();
-        });
+async function removeDoc(docId) {
+    if(!confirm('确定删除该文档？')) return;
+    try {
+        await fetch('/api/knowledge/remove', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({doc_id: docId}) });
+        loadDocs(); loadStats();
+    } catch(e) {}
+}
 
-        async function askQuestion() {
-            if (!selectedFile) {
-                showError('请先上传一张图片');
-                return;
-            }
+async function loadStats() {
+    try {
+        const res = await fetch('/api/knowledge/stats');
+        const s = await res.json();
+        document.getElementById('statDocs').textContent = s.total_documents;
+        document.getElementById('statChunks').textContent = s.total_chunks;
+    } catch(e) {}
+}
 
-            const question = questionInput.value.trim();
-            if (!question) {
-                showError('请输入你的问题');
-                return;
-            }
+// RAG question
+document.getElementById('ragAskBtn').addEventListener('click', () => askRAG());
+document.getElementById('ragQuestion').addEventListener('keypress', e => { if(e.key==='Enter') askRAG(); });
 
-            // 显示加载状态
-            loading.classList.add('show');
-            error.classList.remove('show');
-            answerSection.classList.remove('show');
-            askBtn.disabled = true;
+async function askRAG() {
+    const q = document.getElementById('ragQuestion').value.trim();
+    if(!q) return showError('ragError','请输入问题');
 
-            const formData = new FormData();
-            formData.append('image', selectedFile);
-            formData.append('question', question);
+    showLoading('ragLoading', true);
+    hide('ragAnswer'); hide('ragError');
+    document.getElementById('ragAskBtn').disabled = true;
 
-            try {
-                const response = await fetch('/ask', {
-                    method: 'POST',
-                    body: formData
-                });
+    const fd = new FormData();
+    fd.append('question', q);
 
-                const data = await response.json();
-
-                if (data.success) {
-                    answerContent.textContent = data.answer;
-                    answerSection.classList.add('show');
-                } else {
-                    showError(data.error || '未知错误');
-                }
-            } catch (err) {
-                showError('网络请求失败，请检查服务是否运行正常');
-            } finally {
-                loading.classList.remove('show');
-                askBtn.disabled = false;
-            }
+    try {
+        const res = await fetch('/ask_rag', { method:'POST', body: fd });
+        const data = await res.json();
+        if(data.success) {
+            showAnswer('ragAnswerContent', data.answer, 'ragAnswer');
+            const badge = document.getElementById('ragBadge');
+            badge.style.display = data.has_rag_context ? 'inline-block' : 'none';
+            badge.textContent = data.has_rag_context ? `RAG · ${data.rag_doc_count} 条参考` : '无知识库参考';
+        } else {
+            showError('ragError', data.error);
         }
+    } catch(e) { showError('ragError','请求失败'); }
+    finally { showLoading('ragLoading', false); document.getElementById('ragAskBtn').disabled = false; }
+}
 
-        function showError(msg) {
-            error.textContent = msg;
-            error.classList.add('show');
-            setTimeout(() => error.classList.remove('show'), 5000);
-        }
-    </script>
+// ====== Helpers ======
+function showLoading(id, show) { document.getElementById(id).classList.toggle('show', show); }
+function hide(id) { document.getElementById(id).classList.remove('show'); }
+function showError(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'), 5000); }
+function showAnswer(contentId, text, sectionId) {
+    document.getElementById(contentId).textContent = text;
+    document.getElementById(sectionId).classList.add('show');
+}
+
+// Init
+loadDocs(); loadStats();
+</script>
 </body>
 </html>

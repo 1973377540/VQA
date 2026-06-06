@@ -6,5 +6,9 @@ venv/
 .venv/
 static/uploads/*
 !static/uploads/.gitkeep
+data/index/*
+!data/index/.gitkeep
+data/docs/*
 *.log
 .DS_Store
+eval*

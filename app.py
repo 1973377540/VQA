@@ -20,7 +20,7 @@ app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB max
 
 # DashScope 配置
 dashscope.base_http_api_url = "https://dashscope.aliyuncs.com/api/v1"
-DASHSCOPE_API_KEY = os.environ.get('DASHSCOPE_API_KEY', 'sk-717044f3c7914b50b16a85c21f405662')
+DASHSCOPE_API_KEY = os.environ.get('DASHSCOPE_API_KEY', 'sk-71719159a0784e08aa71e66ae09a5662')
 
 VISION_MODEL = 'qwen-vl-plus'
 RAG_LLM_MODEL = 'qwen-plus'

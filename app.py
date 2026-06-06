@@ -116,13 +116,16 @@ def knowledge_upload():
     filepath = os.path.join(app.config['DOCS_FOLDER'], unique_name)
     file.save(filepath)
 
-    result = rag.add_document(filepath)
-    if not result['success']:
-        # 上传失败时删除文件
+    try:
+        result = rag.add_document(filepath)
+        if not result['success']:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+        return jsonify(result)
+    except Exception as e:
         if os.path.exists(filepath):
             os.remove(filepath)
-
-    return jsonify(result)
+        return jsonify({'error': f'文档处理失败: {str(e)}'}), 500
 
 
 @app.route('/api/knowledge/docs', methods=['GET'])

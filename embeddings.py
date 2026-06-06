@@ -16,7 +16,7 @@ class DashScopeEmbeddings:
         """批量嵌入文档文本"""
         results = []
         # DashScope 每次最多支持 25 条文本
-        batch_size = 25
+        batch_size = 10
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
             response = TextEmbedding.call(

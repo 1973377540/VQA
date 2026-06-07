@@ -33,7 +33,7 @@ from starlette.requests import Request
 # Use Jinja2 directly to avoid Starlette 1.2.1 ↔ Jinja2 3.1.x cache-version incompatibility
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from vqa_graph import rag, run_vqa
+from multi_agent import rag, run_multi_agent_vqa as run_vqa
 
 # ── Paths ───────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent.resolve()
@@ -84,6 +84,7 @@ class AskResponse(BaseModel):
     critique: str = ""
     question_type: str = "general"
     retry_count: int = 0
+    agent_history: list = []
 
 
 class ErrorResponse(BaseModel):
@@ -181,6 +182,7 @@ async def ask(
         critique=result["critique"],
         question_type=result["question_type"],
         retry_count=result["retry_count"],
+        agent_history=result.get("agent_history", []),
     )
 
 
@@ -190,9 +192,9 @@ async def ask(
 @app.get("/api/graph/visualize")
 async def graph_visualize():
     """Return the graph structure as JSON for debugging."""
-    from vqa_graph import vqa_graph
+    from multi_agent import multi_agent_graph
 
-    graph_def = vqa_graph.get_graph()
+    graph_def = multi_agent_graph.get_graph()
     return JSONResponse({
         "nodes": list(graph_def.nodes.keys()),
         "edges": [

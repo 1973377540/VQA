@@ -129,8 +129,11 @@
             background:var(--bg);color:var(--text2);border:1px solid var(--border);
             transition:all .4s;white-space:nowrap;
         }
+        .pipe-node.supervisor{background:var(--secondary);color:#fff;border-color:var(--secondary)}
         .pipe-node.active{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 2px 8px rgba(79,110,247,.3)}
         .pipe-node.done{background:var(--success);color:#fff;border-color:var(--success)}
+        .pipe-node.retry{background:var(--warn);color:#fff;border-color:var(--warn);animation:pulse 1s infinite}
+        @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.05)}100%{transform:scale(1)}}
         .pipe-arrow{color:var(--text2);font-size:.7rem}
         .pipe-label{font-size:.72rem;color:var(--text2);text-align:center;margin-top:6px;min-height:1.2em}
 
@@ -273,20 +276,20 @@
             </div>
         </div>
 
-        <!-- Pipeline visualization -->
+        <!-- Multi-Agent Pipeline Visualization -->
         <div class="pipeline" id="pipeline">
             <div class="pipe-row">
-                <span class="pipe-node" data-node="classify">🔍 分类</span>
+                <span class="pipe-node supervisor" data-node="supervisor">🧑‍💼 主管</span>
                 <span class="pipe-arrow">→</span>
-                <span class="pipe-node" data-node="retrieve">📚 检索</span>
+                <span class="pipe-node" data-node="classifier">🔍 分类师</span>
                 <span class="pipe-arrow">→</span>
-                <span class="pipe-node" data-node="prompt">📝 组装</span>
+                <span class="pipe-node" data-node="retriever">📚 检索师</span>
                 <span class="pipe-arrow">→</span>
-                <span class="pipe-node" data-node="model">🧠 推理</span>
+                <span class="pipe-node" data-node="vision_analyst">👁️ 视觉师</span>
                 <span class="pipe-arrow">→</span>
-                <span class="pipe-node" data-node="critic">✅ 自评</span>
+                <span class="pipe-node" data-node="reasoner">🧠 推理师</span>
                 <span class="pipe-arrow">→</span>
-                <span class="pipe-node" data-node="output">🎯 输出</span>
+                <span class="pipe-node" data-node="critic">✅ 评审师</span>
             </div>
             <div class="pipe-label" id="pipeLabel"></div>
         </div>
@@ -340,7 +343,7 @@
     </div>
 
     <footer>
-        <span>⚡ LangGraph · 6节点状态图</span>
+        <span>🤖 LangGraph · 多Agent 编排（主管+5专家）</span>
         <span>🧠 Qwen-VL / Qwen-Plus</span>
         <span>📊 <a href="https://smith.langchain.com" target="_blank">LangSmith</a></span>
         <span>🔗 <a href="https://github.com/1973377540/VQA" target="_blank">GitHub</a></span>
@@ -388,33 +391,38 @@ function clearImage(){
     ph.style.display='block';dropzone.classList.remove('has-img');fileInput.value='';
 }
 
-// ── Pipeline animation ──
-const NODES = ['classify','retrieve','prompt','model','critic','output'];
-const NODE_LABELS = {
-    classify:'🔍 正在分类问题类型…',
-    retrieve:'📚 正在检索知识库…',
-    prompt:'📝 正在组装 Prompt…',
-    model:'🧠 正在调用模型推理…',
-    critic:'✅ 正在自评回答质量…',
-    output:'🎯 正在格式化输出…'
+// ── Multi-Agent Pipeline animation ──
+const AGENTS = ['supervisor','classifier','retriever','vision_analyst','reasoner','critic'];
+const AGENT_LABELS = {
+    supervisor:'🧑‍💼 主管 Agent 正在调度…',
+    classifier:'🔍 分类 Agent 正在分析问题类型…',
+    retriever:'📚 检索 Agent 正在搜索知识库…',
+    vision_analyst:'👁️ 视觉 Agent 正在解析图片…',
+    reasoner:'🧠 推理 Agent 正在生成回答…',
+    critic:'✅ 评审 Agent 正在评估质量…',
 };
 
 function setPipeline(stage){
     const pipe=document.getElementById('pipeline');
     pipe.classList.add('show');
-    document.getElementById('pipeLabel').textContent=NODE_LABELS[stage]||'';
-    NODES.forEach(n=>{
+    document.getElementById('pipeLabel').textContent=AGENT_LABELS[stage]||'';
+    AGENTS.forEach(n=>{
         const el=document.querySelector(`.pipe-node[data-node="${n}"]`);
         if(!el)return;
-        el.classList.remove('active','done');
-        const idx=NODES.indexOf(n), sidx=NODES.indexOf(stage);
-        if(idx<sidx)el.classList.add('done');
-        else if(idx===sidx)el.classList.add('active');
+        el.classList.remove('active','done','retry');
+        if(n===stage)el.classList.add('active');
     });
+}
+function markDone(stage){
+    const el=document.querySelector(`.pipe-node[data-node="${stage}"]`);
+    if(el){el.classList.remove('active');el.classList.add('done');}
 }
 function clearPipeline(){
     document.getElementById('pipeline').classList.remove('show');
-    NODES.forEach(n=>document.querySelector(`.pipe-node[data-node="${n}"]`)?.classList.remove('active','done'));
+    AGENTS.forEach(n=>{
+        const el=document.querySelector(`.pipe-node[data-node="${n}"]`);
+        if(el)el.classList.remove('active','done','retry');
+    });
     document.getElementById('pipeLabel').textContent='';
 }
 
@@ -494,39 +502,48 @@ async function ask(){
     document.getElementById('loadingText').textContent='🤔 AI 正在思考…';
     clearPipeline();
 
-    // Animate pipeline stages with delays
+    // Animate multi-agent pipeline with delays
     function delay(ms){return new Promise(r=>setTimeout(r,ms))}
-    async function animatePipeline(stage,ms){
+    async function runAgent(stage,ms){
         setPipeline(stage);
         await delay(ms);
+        markDone(stage);
     }
 
     try{
-        // Stage 1: Classify
-        await animatePipeline('classify',600);
+        // Step 1: Supervisor dispatches
+        setPipeline('supervisor');
+        await delay(400);
 
-        // Stage 2: Retrieve
-        animatePipeline('retrieve',100);
+        // Step 2: Classifier Agent
+        await runAgent('classifier',500);
+
+        // Step 3: Retriever Agent
+        await runAgent('retriever',200);
         const srRes=await fetch('/ask?'+new URLSearchParams({question:q,search_only:'true'}));
         const srData=await srRes.json();
-        if(srData.success&&srData.rag_doc_count>0){
-            document.getElementById('loadingText').textContent='📚 已找到 '+srData.rag_doc_count+' 条参考，正在生成回答…';
+        const docCount=srData.success?srData.rag_doc_count:0;
+        if(docCount>0){
+            document.getElementById('loadingText').textContent='📚 检索 Agent 发现 '+docCount+' 条相关参考';
         }
 
-        // Stage 3-4: Prompt + Model
-        await animatePipeline('prompt',400);
-        await animatePipeline('model',800);
+        // Step 4: Vision Analyst (if image)
+        if(selectedImage){
+            await runAgent('vision_analyst',600);
+        }
 
-        // Stage 5-6: Critic + Output
-        await animatePipeline('critic',600);
+        // Step 5: Reasoner Agent
+        document.getElementById('loadingText').textContent='🧠 推理 Agent 正在整合信息生成回答…';
+        await runAgent('reasoner',800);
 
-        // Real call
+        // Real API call
         const fd=new FormData();fd.append('question',q);
         if(selectedImage)fd.append('image',selectedImage);
         const res=await fetch('/ask',{method:'POST',body:fd});
         const data=await res.json();
 
-        await animatePipeline('output',400);
+        // Step 6: Critic Agent
+        await runAgent('critic',400);
 
         if(data.success){
             // Badges
@@ -556,6 +573,14 @@ async function ask(){
                 badgeRetry.textContent='🔄 修正 '+ (data.retry_count-1) +'次';
                 badgeRetry.style.display='inline-block';
             }else badgeRetry.style.display='none';
+
+            // Agent history badge
+            const agentHistory=data.agent_history||[];
+            if(agentHistory.length>0){
+                const agentMap={classifier:'🔍分类',retriever:'📚检索',vision_analyst:'👁️视觉',reasoner:'🧠推理',critic:'✅评审'};
+                const agentStr=agentHistory.map(a=>agentMap[a]||a).filter(Boolean).join(' → ');
+                document.getElementById('answerMeta').innerHTML='🧑‍💼 多Agent: '+agentStr;
+            }
 
             document.getElementById('answerBody').textContent=data.answer;
             document.getElementById('answerArea').classList.add('show');

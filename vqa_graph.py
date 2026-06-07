@@ -15,10 +15,16 @@ import os
 import re
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
+from langsmith import traceable
+
 import dashscope
 from dashscope import Generation, MultiModalConversation
 
 from rag_manager import RagManager
+
+
+# LangGraph 内置的 LangSmith 回调已在环境变量中配置
+# @traceable 装饰器为每个节点添加独立 span
 
 # ── DashScope 配置 ──────────────────────────────────────────────
 dashscope.base_http_api_url = "https://dashscope.aliyuncs.com/api/v1"
@@ -28,14 +34,6 @@ DASHSCOPE_API_KEY = os.environ.get(
 )
 VISION_MODEL = "qwen-vl-plus"
 LLM_MODEL = "qwen-plus"
-
-# ── LangSmith 条件启用 ─────────────────────────────────────────
-_LANGKEY = os.environ.get("LANGSMITH_API_KEY", "")
-_TRACING = bool(_LANGKEY)
-os.environ.setdefault("LANGCHAIN_TRACING_V2", "true" if _TRACING else "false")
-os.environ.setdefault("LANGCHAIN_PROJECT", "vqa-system")
-if _TRACING:
-    os.environ["LANGSMITH_API_KEY"] = _LANGKEY
 
 # ── RAG 单例 ────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +74,7 @@ class VQAState(TypedDict):
 # ==================================================================
 #  Node: classify_question
 # ==================================================================
+@traceable(name="classify_question", run_type="chain")
 def _classify_question(state: VQAState) -> dict:
     """Use LLM to classify the question into one of 4 types."""
     q = state["question"]
@@ -114,6 +113,7 @@ def _classify_question(state: VQAState) -> dict:
 # ==================================================================
 #  Node: rag_retrieve
 # ==================================================================
+@traceable(name="rag_retrieve", run_type="chain")
 def _rag_retrieve(state: VQAState) -> dict:
     """Search the FAISS knowledge base."""
     results = rag.search(state["question"], top_k=5)
@@ -139,6 +139,7 @@ def _rag_retrieve(state: VQAState) -> dict:
 SYSTEM_BASE = "你是一个智能助手，擅长分析图片和文档。"
 
 
+@traceable(name="build_prompt", run_type="chain")
 def _build_prompt(state: VQAState) -> dict:
     """Assemble the system prompt using RAG context."""
     prompt = SYSTEM_BASE
@@ -165,6 +166,7 @@ def _build_prompt(state: VQAState) -> dict:
 # ==================================================================
 #  Node: call_model
 # ==================================================================
+@traceable(name="call_model", run_type="llm")
 def _call_model(state: VQAState) -> dict:
     """Call Qwen-VL (with image) or Qwen-Plus (text-only)."""
     question = state["question"]
@@ -253,6 +255,7 @@ CRITIQUE_PROMPT = """你是答案质量审查员。请严格评审以下 Q&A：
 }}"""
 
 
+@traceable(name="self_critic", run_type="llm")
 def _self_critic(state: VQAState) -> dict:
     """Run self-critique on the answer. Return updated confidence + critique."""
     if not state["answer"] or state["answer"].startswith("[系统错误]"):
@@ -315,6 +318,7 @@ def _self_critic(state: VQAState) -> dict:
 # ==================================================================
 #  Node: format_answer
 # ==================================================================
+@traceable(name="format_answer", run_type="chain")
 def _format_answer(state: VQAState) -> dict:
     """Final formatting / post-processing of the answer."""
     answer = state["answer"]
@@ -342,6 +346,13 @@ def _should_retry(state: VQAState) -> Literal["call_model", "format_answer"]:
 # ==================================================================
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+
+# LangGraph 内置 LangSmith 回调：设置 LANGCHAIN_TRACING_V2=true 后自动生效
+_LC_KEY = os.environ.get("LANGSMITH_API_KEY", "")
+_LANGCHAIN_CALLBACKS = bool(_LC_KEY)
+if _LC_KEY:
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_PROJECT", "vqa-system")
 
 
 def _create_vqa_graph() -> Any:
@@ -379,6 +390,7 @@ vqa_graph = _create_vqa_graph()
 # ==================================================================
 #  Public convenience: run_vqa
 # ==================================================================
+@traceable(name="run_vqa", run_type="chain")
 def run_vqa(
     question: str,
     image_path: Optional[str] = None,

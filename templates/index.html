@@ -484,7 +484,7 @@ document.querySelectorAll('.quick-q').forEach(el=>{
 
 async function ask(){
     const q=document.getElementById('questionInput').value.trim();
-    if(!q){sho***('请输入问题');return}
+    if(!q){showAlert('请输入问题');return}
 
     // Reset UI
     document.getElementById('loadingArea').classList.add('show');
@@ -567,10 +567,10 @@ async function ask(){
                 parts.push('📋 自评: '+data.critique);
             meta.textContent=parts.join(' · ');
         } else {
-            sho***('data.error||'API 调用失败');
+            showAlert(data.error||'API 调用失败');
         }
     } catch(e){
-        sho***('网络请求失败: '+e.message);
+        showAlert('网络请求失败: '+e.message);
     } finally {
         document.getElementById('loadingArea').classList.remove('show');
         document.getElementById('askBtn').disabled=false;
@@ -578,7 +578,7 @@ async function ask(){
     }
 }
 
-function showError(msg){
+function showAlert(msg){
     const el=document.getElementById('errorArea');
     el.textContent='❌ '+msg;el.style.display='block';
     document.getElementById('answerArea').classList.remove('show');

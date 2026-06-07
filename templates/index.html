@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>视觉问答 + RAG 知识库</title>
+    <title>VQA + RAG · LangGraph 智能问答</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
 
@@ -12,210 +12,246 @@
             --primary-light:#eef1ff;
             --secondary:#7c3aed;
             --success:#22c55e;
+            --warn:#f59e0b;
             --danger:#ef4444;
             --bg:#f0f2f5;
             --card:#fff;
             --text:#1e293b;
             --text2:#64748b;
             --border:#e2e8f0;
+            --shadow:0 2px 12px rgba(0,0,0,.08);
+        }
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg:#0f172a;
+                --card:#1e293b;
+                --text:#e2e8f0;
+                --text2:#94a3b8;
+                --border:#334155;
+                --primary-light:#1e293b;
+                --shadow:0 2px 12px rgba(0,0,0,.3);
+            }
+            .img-dropzone,.doc-upload{background:#1e293b}
+            .answer-body{background:#0f172a !important}
+            .stat-box{background:#0f172a !important}
+            .doc-item:hover{background:#0f172a !important}
+            .top-bar{background:linear-gradient(135deg,#312e81,#1e1b4b) !important}
+            .quick-q{background:#334155;border-color:#475569;color:#94a3b8}
+            .quick-q:hover{background:var(--primary);color:#fff}
         }
 
         body {
-            font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-            background: var(--bg);
-            min-height: 100vh;
-            color: var(--text);
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+            background:var(--bg);min-height:100vh;color:var(--text);
+            transition:background .3s,color .3s;
         }
 
+        /* ── Top Bar ── */
         .top-bar {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            padding: 18px 24px;
-            color: #fff;
+            background:linear-gradient(135deg,var(--primary),var(--secondary));
+            padding:16px 24px;color:#fff;display:flex;align-items:center;gap:12px;
         }
-        .top-bar h1 { font-size: 1.4rem; }
-        .top-bar p { font-size: .85rem; opacity: .8; margin-top: 2px; }
+        .top-bar h1{font-size:1.2rem;flex:1}
+        .top-bar .sub{font-size:.8rem;opacity:.75;display:none}
+        @media(min-width:640px){.top-bar .sub{display:inline}}
+        .mode-toggle{
+            background:rgba(255,255,255,.15);border:none;color:#fff;
+            width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:1.1rem;
+            display:flex;align-items:center;justify-content:center;
+            transition:background .2s;
+        }
+        .mode-toggle:hover{background:rgba(255,255,255,.25)}
 
-        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+        .container{max-width:960px;margin:0 auto;padding:16px}
 
-        /* Main card */
-        .main-card {
-            background: var(--card);
-            border-radius: 16px;
-            box-shadow: 0 2px 12px rgba(0,0,0,.08);
-            overflow: hidden;
-        }
-
-        /* Image area */
-        .img-area {
-            padding: 20px;
-            border-bottom: 1px solid var(--border);
-        }
-        .img-area label { font-weight: 600; font-size: .9rem; color: var(--text2); display: block; margin-bottom: 8px; }
-        .img-dropzone {
-            border: 2px dashed var(--border);
-            border-radius: 10px;
-            padding: 24px;
-            text-align: center;
-            cursor: pointer;
-            transition: all .25s;
-            position: relative;
-        }
-        .img-dropzone:hover, .img-dropzone.dragover { border-color: var(--primary); background: var(--primary-light); }
-        .img-dropzone.has-img { padding: 8px; }
-        .img-icon { font-size: 2rem; color: var(--text2); }
-        .img-hint { font-size: .85rem; color: var(--text2); margin-top: 4px; }
-        .img-clear {
-            position: absolute; top: 8px; right: 8px;
-            background: rgba(0,0,0,.5); color: #fff; border: none;
-            width: 28px; height: 28px; border-radius: 50%;
-            cursor: pointer; font-size: 1rem; line-height: 1;
-            display: none;
-        }
-        .img-dropzone.has-img .img-clear { display: flex; align-items: center; justify-content: center; }
-        #imagePreview { max-width: 100%; max-height: 250px; border-radius: 8px; display: none; }
-        #fileInput { display: none; }
-
-        /* Question area */
-        .q-area {
-            padding: 20px;
-            border-bottom: 1px solid var(--border);
-        }
-        .q-row { display: flex; gap: 10px; }
-        #questionInput {
-            flex: 1;
-            padding: 12px 16px;
-            border: 2px solid var(--border);
-            border-radius: 10px;
-            font-size: 1rem;
-            transition: border-color .25s;
-        }
-        #questionInput:focus { outline: none; border-color: var(--primary); }
-
-        .btn {
-            padding: 12px 24px;
-            border: none; border-radius: 10px;
-            font-size: 1rem; font-weight: 600;
-            cursor: pointer;
-            transition: transform .15s, box-shadow .15s;
-            white-space: nowrap;
-        }
-        .btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: #fff;
-        }
-        .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79,110,247,.35); }
-        .btn-sm { padding: 6px 14px; font-size: .85rem; border-radius: 8px; }
-
-        .quick-qs {
-            display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
-        }
-        .quick-q {
-            padding: 5px 12px; background: var(--primary-light);
-            border: 1px solid #dde3ff; border-radius: 16px;
-            font-size: .82rem; color: var(--primary); cursor: pointer;
-            transition: all .2s;
-        }
-        .quick-q:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
-
-        /* Loading / Error */
-        .loading { display: none; padding: 30px; text-align: center; border-bottom: 1px solid var(--border); }
-        .loading.show { display: block; }
-        .spinner {
-            width: 32px; height: 32px;
-            border: 4px solid #eee; border-top-color: var(--primary);
-            border-radius: 50%; animation: spin .8s linear infinite;
-            margin: 0 auto 10px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text { font-size: .9rem; color: var(--text2); }
-        .error-text { color: var(--danger); }
-
-        /* Answer */
-        .answer-area { padding: 20px 20px; display: none; border-bottom: 1px solid var(--border); }
-        .answer-area.show { display: block; }
-        .answer-hdr { font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-        .badge-rag {
-            display: inline-block; background: var(--success); color: #fff;
-            font-size: .72rem; padding: 2px 8px; border-radius: 8px;
-        }
-        .answer-body {
-            background: var(--bg); border-radius: 10px;
-            padding: 16px; line-height: 1.8; font-size: .95rem;
-            white-space: pre-wrap;
+        .main-card{
+            background:var(--card);border-radius:16px;box-shadow:var(--shadow);
+            overflow:hidden;transition:background .3s;
         }
 
-        /* KB Panel */
-        .kb-section { padding: 0; }
-        .kb-toggle {
-            width: 100%; padding: 14px 20px;
-            background: none; border: none; border-bottom: 1px solid var(--border);
-            font-size: .95rem; font-weight: 600; cursor: pointer;
-            display: flex; align-items: center; justify-content: space-between;
-            color: var(--text); transition: background .2s;
+        /* ── Image ── */
+        .img-area{padding:16px 20px;border-bottom:1px solid var(--border)}
+        .img-area label{font-weight:600;font-size:.85rem;color:var(--text2);display:block;margin-bottom:6px}
+        .img-dropzone{
+            border:2px dashed var(--border);border-radius:10px;padding:20px;
+            text-align:center;cursor:pointer;transition:all .25s;position:relative;
         }
-        .kb-toggle:hover { background: var(--bg); }
-        .kb-arrow { transition: transform .25s; display: inline-block; }
-        .kb-arrow.open { transform: rotate(180deg); }
-        .kb-body { display: none; padding: 20px; }
-        .kb-body.open { display: block; }
-
-        .kb-stats { display: flex; gap: 12px; margin-bottom: 16px; }
-        .stat-box {
-            flex: 1; background: var(--bg); border-radius: 10px;
-            padding: 12px; text-align: center;
+        .img-dropzone:hover,.img-dropzone.dragover{border-color:var(--primary);background:var(--primary-light)}
+        .img-dropzone.has-img{padding:6px}
+        .img-icon{font-size:1.8rem;color:var(--text2)}
+        .img-hint{font-size:.82rem;color:var(--text2);margin-top:3px}
+        .img-clear{
+            position:absolute;top:6px;right:6px;
+            background:rgba(0,0,0,.5);color:#fff;border:none;
+            width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:.9rem;
+            display:none;align-items:center;justify-content:center;
         }
-        .stat-num { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
-        .stat-lbl { font-size: .8rem; color: var(--text2); }
+        .img-dropzone.has-img .img-clear{display:flex}
+        #imagePreview{max-width:100%;max-height:220px;border-radius:8px;display:none}
+        #fileInput{display:none}
 
-        .doc-upload {
-            border: 2px dashed var(--border); border-radius: 10px;
-            padding: 20px; text-align: center; cursor: pointer;
-            transition: all .25s; margin-bottom: 14px;
+        /* ── Question ── */
+        .q-area{padding:16px 20px;border-bottom:1px solid var(--border)}
+        .q-row{display:flex;gap:8px}
+        #questionInput{
+            flex:1;padding:11px 16px;border:2px solid var(--border);
+            border-radius:10px;font-size:.95rem;transition:border-color .25s;
+            background:var(--card);color:var(--text);
         }
-        .doc-upload:hover { border-color: var(--primary); background: var(--primary-light); }
-        .doc-upload.has-file { border-style: solid; border-color: var(--success); background: #f0fff0; }
-        .doc-icon { font-size: 1.6rem; }
-        #ragFileInput { display: none; }
-        .doc-upload-status { margin-top: 4px; font-size: .85rem; color: var(--primary); font-weight: 600; }
+        #questionInput:focus{outline:none;border-color:var(--primary)}
 
-        .doc-list-title { font-weight: 600; margin-bottom: 8px; font-size: .9rem; }
-        .doc-item {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 5px;
+        .btn{
+            padding:11px 20px;border:none;border-radius:10px;
+            font-size:.95rem;font-weight:600;cursor:pointer;
+            transition:transform .15s,box-shadow .15s;white-space:nowrap;
         }
-        .doc-item:hover { background: var(--bg); }
-        .doc-name { font-size: .9rem; }
-        .doc-chunks { font-size: .8rem; color: var(--text2); }
-        .empty-docs { text-align: center; color: #aaa; padding: 16px; font-size: .9rem; }
+        .btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+        .btn-primary{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff}
+        .btn-primary:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,110,247,.35)}
+        .btn-sm{padding:5px 12px;font-size:.8rem;border-radius:6px}
 
-        footer { text-align: center; color: var(--text2); padding: 20px; font-size: .85rem; }
+        .quick-qs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+        .quick-q{
+            padding:4px 10px;background:var(--primary-light);
+            border:1px solid var(--border);border-radius:14px;
+            font-size:.78rem;color:var(--primary);cursor:pointer;
+            transition:all .2s;
+        }
+        .quick-q:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
 
-        @media (max-width: 640px) {
-            .container { padding: 12px; }
-            .q-row { flex-direction: column; }
-            .kb-stats { flex-direction: column; }
+        /* ── Pipeline visualization ── */
+        .pipeline{display:none;padding:16px 20px;border-bottom:1px solid var(--border)}
+        .pipeline.show{display:block}
+        .pipe-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center}
+        .pipe-node{
+            display:flex;align-items:center;gap:4px;
+            padding:5px 10px;border-radius:8px;font-size:.78rem;
+            background:var(--bg);color:var(--text2);border:1px solid var(--border);
+            transition:all .4s;white-space:nowrap;
+        }
+        .pipe-node.active{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 2px 8px rgba(79,110,247,.3)}
+        .pipe-node.done{background:var(--success);color:#fff;border-color:var(--success)}
+        .pipe-arrow{color:var(--text2);font-size:.7rem}
+        .pipe-label{font-size:.72rem;color:var(--text2);text-align:center;margin-top:6px;min-height:1.2em}
+
+        /* ── Loading ── */
+        .loading{display:none;padding:24px;text-align:center;border-bottom:1px solid var(--border)}
+        .loading.show{display:block}
+        .spinner{
+            width:28px;height:28px;border:3px solid var(--border);
+            border-top-color:var(--primary);border-radius:50%;
+            animation:spin .8s linear infinite;margin:0 auto 8px
+        }
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .loading-text{font-size:.88rem;color:var(--text2)}
+
+        /* ── Answer ── */
+        .answer-area{padding:16px 20px;display:none;border-bottom:1px solid var(--border)}
+        .answer-area.show{display:block}
+        .answer-hdr{
+            font-weight:600;margin-bottom:10px;
+            display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+        }
+        .badge{
+            display:inline-block;font-size:.7rem;padding:2px 8px;
+            border-radius:6px;font-weight:500;
+        }
+        .badge-rag{background:var(--success);color:#fff}
+        .badge-type{background:var(--primary);color:#fff}
+        .badge-conf{background:var(--warn);color:#fff}
+        .badge-retry{background:var(--danger);color:#fff}
+        .answer-body{
+            background:var(--bg);border-radius:10px;padding:14px;
+            line-height:1.8;font-size:.93rem;white-space:pre-wrap;overflow-x:auto;
+        }
+        .answer-meta{
+            display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;
+            font-size:.78rem;color:var(--text2);
+        }
+
+        /* ── Error ── */
+        .error-area{display:none;padding:12px 20px;background:#fef2f2;color:var(--danger);font-size:.88rem;border-bottom:1px solid #fecaca}
+        @media(prefers-color-scheme:dark){.error-area{background:#3b1111;border-color:#5c1a1a}}
+
+        /* ── KB ── */
+        .kb-section{padding:0}
+        .kb-toggle{
+            width:100%;padding:12px 20px;background:none;border:none;border-bottom:1px solid var(--border);
+            font-size:.9rem;font-weight:600;cursor:pointer;
+            display:flex;align-items:center;justify-content:space-between;
+            color:var(--text);transition:background .2s;
+        }
+        .kb-toggle:hover{background:var(--bg)}
+        .kb-arrow{transition:transform .25s;display:inline-block;font-size:.7rem}
+        .kb-arrow.open{transform:rotate(180deg)}
+        .kb-body{display:none;padding:16px 20px}
+        .kb-body.open{display:block}
+
+        .kb-stats{display:flex;gap:10px;margin-bottom:14px}
+        .stat-box{flex:1;background:var(--bg);border-radius:8px;padding:10px;text-align:center}
+        .stat-num{font-size:1.3rem;font-weight:700;color:var(--primary)}
+        .stat-lbl{font-size:.75rem;color:var(--text2)}
+
+        .doc-upload{
+            border:2px dashed var(--border);border-radius:8px;padding:16px;
+            text-align:center;cursor:pointer;transition:all .25s;margin-bottom:12px;
+        }
+        .doc-upload:hover{border-color:var(--primary);background:var(--primary-light)}
+        .doc-upload.has-file{border-style:solid;border-color:var(--success);background:#f0fff0}
+        @media(prefers-color-scheme:dark){.doc-upload.has-file{border-color:var(--success);background:#0a2e1a}}
+        .doc-icon{font-size:1.4rem}
+        #ragFileInput{display:none}
+        .doc-upload-status{margin-top:3px;font-size:.82rem;color:var(--primary);font-weight:600}
+
+        .doc-list-title{font-weight:600;margin-bottom:6px;font-size:.85rem}
+        .doc-item{
+            display:flex;justify-content:space-between;align-items:center;
+            padding:7px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;
+            transition:background .15s;
+        }
+        .doc-item:hover{background:var(--bg)}
+        .doc-name{font-size:.85rem}
+        .doc-chunks{font-size:.75rem;color:var(--text2)}
+        .empty-docs{text-align:center;color:#94a3b8;padding:14px;font-size:.85rem}
+
+        /* ── Footer ── */
+        footer{
+            text-align:center;color:var(--text2);padding:16px;
+            font-size:.78rem;display:flex;justify-content:center;gap:16px;flex-wrap:wrap;
+        }
+        footer a{color:var(--primary);text-decoration:none}
+        footer a:hover{text-decoration:underline}
+
+        @media(max-width:640px){
+            .container{padding:10px}
+            .q-row{flex-direction:column}
+            .kb-stats{flex-direction:column}
+            .pipe-row{gap:2px}
+            .pipe-node{padding:3px 6px;font-size:.7rem}
+            .top-bar h1{font-size:1rem}
+            .answer-body{font-size:.88rem}
         }
     </style>
 </head>
 <body>
 
 <div class="top-bar">
-    <h1>🖼️ 视觉问答 + 📚 RAG 知识库</h1>
-    <p>可选上传图片 · 自动检索知识库 · AI 智能回答</p>
+    <h1>⚡ VQA + RAG · LangGraph 智能问答</h1>
+    <span class="sub">多模态 · 知识库 · 自省纠错</span>
+    <button class="mode-toggle" id="darkToggle" title="切换深色模式">🌙</button>
 </div>
 
 <div class="container">
     <div class="main-card">
 
-        <!-- Image (可选) -->
+        <!-- Image -->
         <div class="img-area">
-            <label>📷 图片 <span style="color:#aaa;font-weight:400;">（可选）</span></label>
+            <label>📷 图片 <span style="color:var(--text2);font-weight:400;">（可选，不传则纯文本问答）</span></label>
             <div class="img-dropzone" id="dropzone">
                 <div id="placeholder">
                     <div class="img-icon">🖼️</div>
-                    <div class="img-hint">点击或拖拽上传图片（可选）</div>
-                    <div class="img-hint" style="font-size:.78rem;">JPG / PNG / GIF / WebP · 不传则纯文本 + 知识库回答</div>
+                    <div class="img-hint">点击或拖拽上传图片</div>
+                    <div class="img-hint" style="font-size:.74rem;">JPG / PNG / GIF / WebP</div>
                 </div>
                 <img id="imagePreview" alt="预览">
                 <button class="img-clear" id="clearImgBtn" title="移除图片">✕</button>
@@ -226,37 +262,56 @@
         <!-- Question -->
         <div class="q-area">
             <div class="q-row">
-                <input type="text" id="questionInput" placeholder="输入你的问题…">
+                <input type="text" id="questionInput" placeholder="输入你的问题…" autofocus>
                 <button class="btn btn-primary" id="askBtn">🚀 提问</button>
             </div>
             <div class="quick-qs">
-                <span class="quick-q" data-q="这张图片描绘了什么？">描述图片</span>
-                <span class="quick-q" data-q="图片中有哪些细节？">图片细节</span>
-                <span class="quick-q" data-q="总结知识库的主要内容">📚 总结知识库</span>
-                <span class="quick-q" data-q="知识库中有哪些关键信息？">💡 提取关键信息</span>
+                <span class="quick-q" data-q="这张图片描绘了什么？">🖼️ 描述图片</span>
+                <span class="quick-q" data-q="图片中有哪些物体？">🔍 图片物体</span>
+                <span class="quick-q" data-q="总结知识库内容">📚 总结知识库</span>
+                <span class="quick-q" data-q="对比RAG和微调">⚖️ RAG vs 微调</span>
             </div>
+        </div>
+
+        <!-- Pipeline visualization -->
+        <div class="pipeline" id="pipeline">
+            <div class="pipe-row">
+                <span class="pipe-node" data-node="classify">🔍 分类</span>
+                <span class="pipe-arrow">→</span>
+                <span class="pipe-node" data-node="retrieve">📚 检索</span>
+                <span class="pipe-arrow">→</span>
+                <span class="pipe-node" data-node="prompt">📝 组装</span>
+                <span class="pipe-arrow">→</span>
+                <span class="pipe-node" data-node="model">🧠 推理</span>
+                <span class="pipe-arrow">→</span>
+                <span class="pipe-node" data-node="critic">✅ 自评</span>
+                <span class="pipe-arrow">→</span>
+                <span class="pipe-node" data-node="output">🎯 输出</span>
+            </div>
+            <div class="pipe-label" id="pipeLabel"></div>
         </div>
 
         <!-- Loading -->
         <div class="loading" id="loadingArea">
             <div class="spinner"></div>
-            <div class="loading-text">
-                <span id="loadingText">AI 正在思考…</span>
-                <span id="loadingSub" style="display:block;font-size:.8rem;color:#94a3b8;margin-top:4px;"></span>
-            </div>
+            <div class="loading-text" id="loadingText">🤔 AI 正在思考…</div>
         </div>
 
         <!-- Answer -->
         <div class="answer-area" id="answerArea">
             <div class="answer-hdr">
                 🤖 回答
-                <span class="badge-rag" id="ragBadge" style="display:none;">RAG</span>
+                <span class="badge badge-rag" id="ragBadge" style="display:none;">RAG</span>
+                <span class="badge badge-type" id="typeBadge" style="display:none;"></span>
+                <span class="badge badge-conf" id="confBadge" style="display:none;"></span>
+                <span class="badge badge-retry" id="retryBadge" style="display:none;"></span>
             </div>
             <div class="answer-body" id="answerBody"></div>
+            <div class="answer-meta" id="answerMeta"></div>
         </div>
 
-        <!-- Error inline -->
-        <div style="display:none;padding:12px 20px;background:#fef2f2;color:var(--danger);font-size:.9rem;border-bottom:1px solid #fecaca;" id="errorArea"></div>
+        <!-- Error -->
+        <div class="error-area" id="errorArea"></div>
 
         <!-- Knowledge Base -->
         <div class="kb-section">
@@ -272,223 +327,266 @@
 
                 <div class="doc-upload" id="docUploadArea">
                     <div class="doc-icon">📄</div>
-                    <div style="font-size:.9rem;">点击上传文档到知识库</div>
-                    <div style="font-size:.78rem;color:var(--text2);">PDF · DOCX · XLSX · TXT · MD</div>
+                    <div style="font-size:.85rem;">点击上传文档到知识库</div>
+                    <div style="font-size:.74rem;color:var(--text2);">PDF · DOCX · XLSX · TXT · MD</div>
                     <div class="doc-upload-status" id="docUploadStatus"></div>
                     <input type="file" id="ragFileInput" accept=".pdf,.docx,.xlsx,.xls,.txt,.md,.csv,.log">
                 </div>
 
                 <div class="doc-list-title">📋 已收录文档</div>
-                <div id="docsContainer">
-                    <div class="empty-docs" id="emptyDocs">暂无文档</div>
-                </div>
+                <div id="docsContainer"><div class="empty-docs" id="emptyDocs">暂无文档，上传后提问将自动检索</div></div>
             </div>
         </div>
     </div>
 
-    <footer>Powered by Qwen-VL + RAG · Flask + FAISS + DashScope</footer>
+    <footer>
+        <span>⚡ LangGraph · 6节点状态图</span>
+        <span>🧠 Qwen-VL / Qwen-Plus</span>
+        <span>📊 <a href="https://smith.langchain.com" target="_blank">LangSmith</a></span>
+        <span>🔗 <a href="https://github.com/1973377540/VQA" target="_blank">GitHub</a></span>
+    </footer>
 </div>
 
 <script>
-// ========== Image ==========
+// ── Dark Mode ──
+const darkToggle = document.getElementById('darkToggle');
+function applyTheme(isDark){
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    darkToggle.textContent = isDark ? '☀️' : '🌙';
+}
+if (window.matchMedia('(prefers-color-scheme:dark)').matches) applyTheme(true);
+darkToggle.addEventListener('click',()=>{
+    const isDark = darkToggle.textContent === '🌙';
+    applyTheme(isDark);
+});
+
+// ── Image ──
 let selectedImage = null;
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const preview = document.getElementById('imagePreview');
 const ph = document.getElementById('placeholder');
 
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-dropzone.addEventListener('drop', e => {
-    e.preventDefault(); dropzone.classList.remove('dragover');
-    if (e.dataTransfer.files[0]?.type.startsWith('image/')) setImage(e.dataTransfer.files[0]);
+dropzone.addEventListener('click',()=>fileInput.click());
+dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('dragover')});
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop',e=>{
+    e.preventDefault();dropzone.classList.remove('dragover');
+    if(e.dataTransfer.files[0]?.type.startsWith('image/')) setImage(e.dataTransfer.files[0]);
 });
-fileInput.addEventListener('change', e => { if (e.target.files[0]) setImage(e.target.files[0]); });
+fileInput.addEventListener('change',e=>{if(e.target.files[0])setImage(e.target.files[0])});
+document.getElementById('clearImgBtn').addEventListener('click',e=>{e.stopPropagation();clearImage()});
 
-document.getElementById('clearImgBtn').addEventListener('click', e => {
-    e.stopPropagation();
-    clearImage();
-});
-
-function setImage(f) {
-    selectedImage = f;
-    const r = new FileReader();
-    r.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; ph.style.display = 'none'; dropzone.classList.add('has-img'); };
+function setImage(f){
+    selectedImage=f;
+    const r=new FileReader();
+    r.onload=e=>{preview.src=e.target.result;preview.style.display='block';ph.style.display='none';dropzone.classList.add('has-img')};
     r.readAsDataURL(f);
 }
-function clearImage() {
-    selectedImage = null;
-    preview.src = ''; preview.style.display = 'none'; ph.style.display = 'block';
-    dropzone.classList.remove('has-img');
-    fileInput.value = '';
+function clearImage(){
+    selectedImage=null;preview.src='';preview.style.display='none';
+    ph.style.display='block';dropzone.classList.remove('has-img');fileInput.value='';
 }
 
-// ========== KB Toggle ==========
-document.getElementById('kbToggleBtn').addEventListener('click', () => {
-    const body = document.getElementById('kbBody');
-    const arrow = document.getElementById('kbArrow');
-    body.classList.toggle('open');
-    arrow.classList.toggle('open');
-});
+// ── Pipeline animation ──
+const NODES = ['classify','retrieve','prompt','model','critic','output'];
+const NODE_LABELS = {
+    classify:'🔍 正在分类问题类型…',
+    retrieve:'📚 正在检索知识库…',
+    prompt:'📝 正在组装 Prompt…',
+    model:'🧠 正在调用模型推理…',
+    critic:'✅ 正在自评回答质量…',
+    output:'🎯 正在格式化输出…'
+};
 
-// ========== KB Upload ==========
-const docUploadArea = document.getElementById('docUploadArea');
-const ragFileInput = document.getElementById('ragFileInput');
-docUploadArea.addEventListener('click', () => ragFileInput.click());
-ragFileInput.addEventListener('change', e => {
-    if (e.target.files[0]) uploadDoc(e.target.files[0]);
-});
-
-async function uploadDoc(f) {
-    const status = document.getElementById('docUploadStatus');
-    status.textContent = '⏳ 正在上传 ' + f.name + '…';
-    docUploadArea.classList.add('has-file');
-    const fd = new FormData();
-    fd.append('file', f);
-    try {
-        const res = await fetch('/api/knowledge/upload', { method:'POST', body: fd });
-        const data = await res.json();
-        if (data.success) {
-            status.textContent = '✅ ' + data.filename + ' → ' + data.chunk_count + ' 块';
-            loadKB();
-        } else {
-            status.textContent = '❌ ' + (data.error || '上传失败');
-        }
-    } catch(e) {
-        status.textContent = '❌ 网络错误';
-    }
-    setTimeout(() => { status.textContent = ''; docUploadArea.classList.remove('has-file'); }, 3000);
-    ragFileInput.value = '';
+function setPipeline(stage){
+    const pipe=document.getElementById('pipeline');
+    pipe.classList.add('show');
+    document.getElementById('pipeLabel').textContent=NODE_LABELS[stage]||'';
+    NODES.forEach(n=>{
+        const el=document.querySelector(`.pipe-node[data-node="${n}"]`);
+        if(!el)return;
+        el.classList.remove('active','done');
+        const idx=NODES.indexOf(n), sidx=NODES.indexOf(stage);
+        if(idx<sidx)el.classList.add('done');
+        else if(idx===sidx)el.classList.add('active');
+    });
+}
+function clearPipeline(){
+    document.getElementById('pipeline').classList.remove('show');
+    NODES.forEach(n=>document.querySelector(`.pipe-node[data-node="${n}"]`)?.classList.remove('active','done'));
+    document.getElementById('pipeLabel').textContent='';
 }
 
-async function removeDoc(docId) {
-    if (!confirm('删除此文档？')) return;
-    try {
-        await fetch('/api/knowledge/remove', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({doc_id: docId})
-        });
+// ── KB Toggle ──
+document.getElementById('kbToggleBtn').addEventListener('click',()=>{
+    document.getElementById('kbBody').classList.toggle('open');
+    document.getElementById('kbArrow').classList.toggle('open');
+});
+
+// ── KB Upload ──
+const ragFileInput=document.getElementById('ragFileInput');
+document.getElementById('docUploadArea').addEventListener('click',()=>ragFileInput.click());
+ragFileInput.addEventListener('change',e=>{if(e.target.files[0])uploadDoc(e.target.files[0])});
+
+async function uploadDoc(f){
+    const st=document.getElementById('docUploadStatus');
+    st.textContent='⏳ 上传 '+f.name+'…';
+    document.getElementById('docUploadArea').classList.add('has-file');
+    const fd=new FormData();fd.append('file',f);
+    try{
+        const res=await fetch('/api/knowledge/upload',{method:'POST',body:fd});
+        const d=await res.json();
+        st.textContent=d.success?'✅ '+d.filename+' → '+d.chunk_count+'块':'❌ '+(d.error||'失败');
+        if(d.success)loadKB();
+    }catch(e){st.textContent='❌ 网络错误'}
+    setTimeout(()=>{st.textContent='';document.getElementById('docUploadArea').classList.remove('has-file')},3000);
+    ragFileInput.value='';
+}
+
+async function removeDoc(id){
+    if(!confirm('删除此文档？'))return;
+    try{
+        await fetch('/api/knowledge/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_id:id})});
         loadKB();
-    } catch(e) {}
+    }catch(e){}
 }
 
-async function loadKB() {
-    try {
-        const [sRes, dRes] = await Promise.all([
-            fetch('/api/knowledge/stats'),
-            fetch('/api/knowledge/docs')
-        ]);
-        const stats = await sRes.json();
-        const docs = await dRes.json();
-        document.getElementById('statDocs').textContent = stats.total_documents;
-        document.getElementById('statChunks').textContent = stats.total_chunks;
-
-        const container = document.getElementById('docsContainer');
-        const empty = document.getElementById('emptyDocs');
-        if (docs.length === 0) {
-            empty.style.display = 'block';
-            container.innerHTML = '';
-        } else {
-            empty.style.display = 'none';
-            container.innerHTML = docs.map(d => `
+async function loadKB(){
+    try{
+        const [sr,dr]=await Promise.all([fetch('/api/knowledge/stats'),fetch('/api/knowledge/docs')]);
+        const s=await sr.json(),docs=await dr.json();
+        document.getElementById('statDocs').textContent=s.total_documents;
+        document.getElementById('statChunks').textContent=s.total_chunks;
+        const c=document.getElementById('docsContainer'),e=document.getElementById('emptyDocs');
+        if(docs.length===0){e.style.display='block';c.innerHTML=''}
+        else{
+            e.style.display='none';
+            c.innerHTML=docs.map(d=>`
                 <div class="doc-item">
-                    <span>
-                        <span class="doc-name">📄 ${d.filename}</span>
-                        <span class="doc-chunks">（${d.chunk_count} 块）</span>
-                    </span>
-                    <button class="btn btn-sm" style="background:var(--danger);color:#fff;" onclick="removeDoc('${d.doc_id}')">删除</button>
+                    <span><span class="doc-name">📄 ${d.filename}</span> <span class="doc-chunks">（${d.chunk_count} 块）</span></span>
+                    <button class="btn btn-sm" style="background:var(--danger);color:#fff" onclick="removeDoc('${d.doc_id}')">删除</button>
                 </div>
             `).join('');
         }
-    } catch(e) {}
+    }catch(e){}
 }
 
-// ========== Ask ==========
-document.getElementById('askBtn').addEventListener('click', ask);
-document.getElementById('questionInput').addEventListener('keypress', e => { if (e.key === 'Enter') ask(); });
-
-document.querySelectorAll('.quick-q').forEach(el => {
-    el.addEventListener('click', () => {
-        document.getElementById('questionInput').value = el.dataset.q;
+// ── Ask ──
+document.getElementById('askBtn').addEventListener('click',ask);
+document.getElementById('questionInput').addEventListener('keypress',e=>{if(e.key==='Enter')ask()});
+document.querySelectorAll('.quick-q').forEach(el=>{
+    el.addEventListener('click',()=>{
+        document.getElementById('questionInput').value=el.dataset.q;
         document.getElementById('questionInput').focus();
     });
 });
 
-async function ask() {
-    const q = document.getElementById('questionInput').value.trim();
-    if (!q) {
-        showError('请输入问题'); return;
-    }
+async function ask(){
+    const q=document.getElementById('questionInput').value.trim();
+    if(!q){sho***('请输入问题');return}
 
-    // Show loading
+    // Reset UI
     document.getElementById('loadingArea').classList.add('show');
     document.getElementById('answerArea').classList.remove('show');
-    document.getElementById('errorArea').style.display = 'none';
-    document.getElementById('askBtn').disabled = true;
+    document.getElementById('errorArea').style.display='none';
+    document.getElementById('askBtn').disabled=true;
+    document.getElementById('loadingText').textContent='🤔 AI 正在思考…';
+    clearPipeline();
 
-    const loadText = document.getElementById('loadingText');
-    const loadSub = document.getElementById('loadingSub');
-    loadText.textContent = '🤔 AI 正在思考…';
+    // Animate pipeline stages with delays
+    function delay(ms){return new Promise(r=>setTimeout(r,ms))}
+    async function animatePipeline(stage,ms){
+        setPipeline(stage);
+        await delay(ms);
+    }
 
-    let subParts = [];
-    if (selectedImage) subParts.push('📷 分析图片');
-    subParts.push('📚 检索知识库');
-    loadSub.textContent = subParts.join(' · ');
+    try{
+        // Stage 1: Classify
+        await animatePipeline('classify',600);
 
-    try {
-        // Step 1: Search KB (head request)
-        loadText.textContent = '🔍 检索知识库…';
-        try {
-            const sr = await fetch('/ask?' + new URLSearchParams({question: q, search_only: 'true'}));
-            const sd = await sr.json();
-            if (sd.success && sd.rag_doc_count > 0) {
-                loadText.textContent = '📚 已找到 ' + sd.rag_doc_count + ' 条参考，生成回答…';
-            } else {
-                loadText.textContent = '💭 直接回答…';
-            }
-        } catch(_) {}
-
-        // Step 2: Get unified answer
-        const fd = new FormData();
-        fd.append('question', q);
-        if (selectedImage) fd.append('image', selectedImage);
-
-        const res = await fetch('/ask', { method:'POST', body: fd });
-        const data = await res.json();
-
-        if (data.success) {
-            document.getElementById('answerBody').textContent = data.answer;
-            document.getElementById('answerArea').classList.add('show');
-            const badge = document.getElementById('ragBadge');
-            if (data.has_rag_context) {
-                badge.textContent = `RAG · ${data.rag_doc_count} 条参考`;
-                badge.style.display = 'inline-block';
-            } else {
-                badge.style.display = 'none';
-            }
-        } else {
-            showError(data.error || 'API 调用失败');
+        // Stage 2: Retrieve
+        animatePipeline('retrieve',100);
+        const srRes=await fetch('/ask?'+new URLSearchParams({question:q,search_only:'true'}));
+        const srData=await srRes.json();
+        if(srData.success&&srData.rag_doc_count>0){
+            document.getElementById('loadingText').textContent='📚 已找到 '+srData.rag_doc_count+' 条参考，正在生成回答…';
         }
-    } catch(e) {
-        showError('网络请求失败: ' + e.message);
+
+        // Stage 3-4: Prompt + Model
+        await animatePipeline('prompt',400);
+        await animatePipeline('model',800);
+
+        // Stage 5-6: Critic + Output
+        await animatePipeline('critic',600);
+
+        // Real call
+        const fd=new FormData();fd.append('question',q);
+        if(selectedImage)fd.append('image',selectedImage);
+        const res=await fetch('/ask',{method:'POST',body:fd});
+        const data=await res.json();
+
+        await animatePipeline('output',400);
+
+        if(data.success){
+            // Badges
+            const badgeRag=document.getElementById('ragBadge');
+            const badgeType=document.getElementById('typeBadge');
+            const badgeConf=document.getElementById('confBadge');
+            const badgeRetry=document.getElementById('retryBadge');
+
+            if(data.has_rag_context){
+                badgeRag.textContent='RAG · '+data.rag_doc_count+'条';
+                badgeRag.style.display='inline-block';
+            }else badgeRag.style.display='none';
+
+            if(data.question_type){
+                const tMap={direct_visual:'🖼️看图',logical:'🧠逻辑',ocr_heavy:'📝文字',general:'💬通用'};
+                badgeType.textContent=tMap[data.question_type]||data.question_type;
+                badgeType.style.display='inline-block';
+            }else badgeType.style.display='none';
+
+            if(data.confidence!=null){
+                const pct=Math.round(data.confidence*100);
+                badgeConf.textContent='💯 '+pct+'%';
+                badgeConf.style.display='inline-block';
+            }else badgeConf.style.display='none';
+
+            if(data.retry_count>1){
+                badgeRetry.textContent='🔄 修正 '+ (data.retry_count-1) +'次';
+                badgeRetry.style.display='inline-block';
+            }else badgeRetry.style.display='none';
+
+            document.getElementById('answerBody').textContent=data.answer;
+            document.getElementById('answerArea').classList.add('show');
+
+            // Meta info
+            const meta=document.getElementById('answerMeta');
+            const parts=[];
+            if(data.critique && data.critique!=='无' && data.critique!=='视觉问答，需人工验证图片细节')
+                parts.push('📋 自评: '+data.critique);
+            meta.textContent=parts.join(' · ');
+        } else {
+            sho***('data.error||'API 调用失败');
+        }
+    } catch(e){
+        sho***('网络请求失败: '+e.message);
     } finally {
         document.getElementById('loadingArea').classList.remove('show');
-        document.getElementById('askBtn').disabled = false;
+        document.getElementById('askBtn').disabled=false;
+        setTimeout(clearPipeline,500);
     }
 }
 
-function showError(msg) {
-    const el = document.getElementById('errorArea');
-    el.textContent = msg;
-    el.style.display = 'block';
+function showError(msg){
+    const el=document.getElementById('errorArea');
+    el.textContent='❌ '+msg;el.style.display='block';
     document.getElementById('answerArea').classList.remove('show');
-    setTimeout(() => el.style.display = 'none', 5000);
+    setTimeout(()=>el.style.display='none',5000);
 }
 
 // Init
 loadKB();
 </script>
-
 </body>
 </html>

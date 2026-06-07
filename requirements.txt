@@ -1,2 +1,10 @@
 flask>=3.0
 dashscope>=1.20
+fastapi>=0.115
+uvicorn>=0.34
+python-multipart>=0.0.20
+langgraph>=1.2
+langgraph-checkpoint>=4.1
+langsmith>=0.8
+pydantic>=2.0
+pydantic-settings>=2.0

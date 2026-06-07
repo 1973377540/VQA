@@ -1,195 +1,260 @@
-"""视觉问答 + RAG 知识库 - 统一后端"""
+"""
+FastAPI + LangGraph VQA System
+================================
+Replaces the original Flask app with FastAPI, integrating a LangGraph state-graph
+for the VQA + RAG pipeline. LangSmith tracing is enabled when LANGSMITH_API_KEY
+is set in the environment.
+
+Endpoints:
+  GET  /                        → HTML page
+  POST /ask                     → VQA (question ± image, auto RAG + self-critique)
+  POST /ask_sync                → VQA (synchronous, returns once ready)
+  GET  /api/graph/visualize     → Graph structure (JSON)
+  POST /api/knowledge/upload    → Upload document into RAG
+  GET  /api/knowledge/docs      → List documents
+  POST /api/knowledge/remove    → Remove document
+  GET  /api/knowledge/stats     → Knowledge-base statistics
+"""
+
+from __future__ import annotations
 
 import os
 import uuid
-from flask import Flask, request, render_template, jsonify, url_for
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Optional
 
-import dashscope
-from dashscope import MultiModalConversation, Generation
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from starlette.requests import Request
 
-from rag_manager import RagManager
+# Use Jinja2 directly to avoid Starlette 1.2.1 ↔ Jinja2 3.1.x cache-version incompatibility
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
-app.config['DOCS_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'docs')
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB
+from vqa_graph import rag, run_vqa
 
-dashscope.base_http_api_url = "https://dashscope.aliyuncs.com/api/v1"
-DASHSCOPE_API_KEY = os.environ.get('DASHSCOPE_API_KEY', 'sk-71719159a0784e08aa71e66ae09a5662')
-VISION_MODEL = 'qwen-vl-plus'
-LLM_MODEL = 'qwen-plus'
+# ── Paths ───────────────────────────────────────────────────────
+BASE_DIR = Path(__file__).parent.resolve()
+UPLOAD_DIR = BASE_DIR / "static" / "uploads"
+DOCS_DIR = BASE_DIR / "data" / "docs"
+TEMPLATE_DIR = BASE_DIR / "templates"
 
-ALLOWED_IMAGE_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
-ALLOWED_DOC_EXT = {'pdf', 'docx', 'xlsx', 'xls', 'txt', 'md', 'csv', 'log'}
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
-rag = RagManager(api_key=DASHSCOPE_API_KEY, base_dir=os.path.dirname(os.path.abspath(__file__)))
+ALLOWED_IMAGE_EXT = {"png", "jpg", "jpeg", "gif", "webp", "bmp"}
+ALLOWED_DOC_EXT = {"pdf", "docx", "xlsx", "xls", "txt", "md", "csv", "log"}
 
-
-def _allowed(filename, allowed_set):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_set
-
-
-# ============ 页面 ============
-
-@app.route('/')
-def index():
-    return render_template('index.html')
+# ── App lifespan ─────────────────────────────────────────────────
 
 
-# ============ 统一问答接口 (VQA + RAG 合并) ============
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
 
-@app.route('/ask', methods=['POST'])
-def ask():
+
+app = FastAPI(title="VQA + RAG System", version="2.0.0", lifespan=lifespan)
+
+# ── Static files & template engine ───────────────────────────────
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(TEMPLATE_DIR)),
+    autoescape=select_autoescape(["html", "xml"]),
+)
+
+
+def _render_template(name: str, request: Request, **extra) -> str:
+    """Render a Jinja2 template with request context."""
+    tpl = _jinja_env.get_template(name)
+    return tpl.render(request=request, **extra)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Pydantic models
+# ══════════════════════════════════════════════════════════════════
+class AskResponse(BaseModel):
+    success: bool = True
+    answer: str
+    has_rag_context: bool = False
+    rag_doc_count: int = 0
+    image_url: Optional[str] = None
+    confidence: float = 0.0
+    critique: str = ""
+    question_type: str = "general"
+    retry_count: int = 0
+
+
+class ErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+
+
+class DocResponse(BaseModel):
+    success: bool
+    doc_id: Optional[str] = None
+    filename: Optional[str] = None
+    chunk_count: Optional[int] = None
+    error: Optional[str] = None
+    remaining_docs: Optional[int] = None
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Helper
+# ══════════════════════════════════════════════════════════════════
+def _allowed(filename: str, allowed_set: set[str]) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_set
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Routes — Page
+# ══════════════════════════════════════════════════════════════════
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    html = _render_template("index.html", request)
+    return HTMLResponse(html)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Routes — VQA
+# ══════════════════════════════════════════════════════════════════
+@app.post("/ask", response_model=AskResponse)
+async def ask(
+    question: str = Form(...),
+    image: Optional[UploadFile] = File(None),
+    search_only: Optional[str] = Form(""),
+):
     """
-    统一问答：图片可选 + 知识库自动检索
-    - question (必填)
-    - image (可选)
-    - 自动从知识库检索相关内容
+    Unified Q&A endpoint:
+    - question (required)
+    - image (optional)
+    - Uses LangGraph state-graph with RAG, self-critique & optional retry
     """
-    question = request.form.get('question', '').strip()
-    image_file = request.files.get('image')
-    search_only = request.form.get('search_only', '') == 'true'
-
+    question = question.strip()
     if not question:
-        return jsonify({'error': '请输入问题'}), 400
+        raise HTTPException(status_code=400, detail="请输入问题")
 
-    # 可选：仅检索不回答（前端用于展示参考片段）
-    if search_only:
+    # ── search_only mode (frontend may want just RAG snippets) ──
+    if search_only == "true":
         rag_results = rag.search(question, top_k=5)
-        return jsonify({
-            'success': True,
-            'rag_results': rag_results,
-            'rag_doc_count': len(rag_results),
+        return JSONResponse({
+            "success": True,
+            "rag_results": rag_results,
+            "rag_doc_count": len(rag_results),
         })
 
-    # 处理图片
-    saved_image_path = None
-    image_url = None
-    if image_file and image_file.filename:
-        if not _allowed(image_file.filename, ALLOWED_IMAGE_EXT):
-            return jsonify({'error': f'不支持的图片格式'}), 400
-        ext = image_file.filename.rsplit('.', 1)[1].lower()
+    # ── Save uploaded image ─────────────────────────────────────
+    saved_image_path: Optional[str] = None
+    image_url: Optional[str] = None
+
+    if image and image.filename:
+        if not _allowed(image.filename, ALLOWED_IMAGE_EXT):
+            raise HTTPException(status_code=400, detail="不支持的图片格式")
+
+        ext = image.filename.rsplit(".", 1)[1].lower()
         img_name = f"{uuid.uuid4().hex}.{ext}"
-        saved_image_path = os.path.join(app.config['UPLOAD_FOLDER'], img_name)
-        image_file.save(saved_image_path)
-        image_url = url_for('static', filename=f'uploads/{img_name}')
+        dest = UPLOAD_DIR / img_name
 
-    try:
-        # 1. RAG 检索
-        rag_results = rag.search(question, top_k=5)
-        context = ""
-        if rag_results:
-            context_parts = []
-            for i, r in enumerate(rag_results, 1):
-                context_parts.append(f"[{i}] 来自文档「{r['metadata'].get('filename', '未知')}」:\n{r['content']}")
-            context = "\n\n---\n\n".join(context_parts)
+        content = await image.read()
+        dest.write_bytes(content)
 
-        # 2. 构建 system prompt
-        system_prompt = "你是一个智能助手，擅长分析图片和文档。"
-        if context:
-            system_prompt += (
-                "\n请基于以下参考资料回答用户问题。引用时请标注来源编号。"
-                "如果参考资料中没有相关信息，请根据你的知识回答，并说明参考资料中未提及。\n\n"
-                f"## 参考资料\n\n{context}"
-            )
+        saved_image_path = str(dest)
+        image_url = f"/static/uploads/{img_name}"
 
-        # 3. 调用 API
-        if saved_image_path:
-            messages = [{
-                "role": "user", "content": [
-                    {"text": f"{system_prompt}\n\n问题：{question}"},
-                    {"image": f"file://{saved_image_path}"},
-                ]
-            }]
-            response = MultiModalConversation.call(
-                api_key=DASHSCOPE_API_KEY,
-                model=VISION_MODEL,
-                messages=messages
-            )
-        else:
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"问题：{question}"},
-            ]
-            response = Generation.call(
-                api_key=DASHSCOPE_API_KEY,
-                model=LLM_MODEL,
-                messages=messages,
-                result_format='message'
-            )
+    # ── Run LangGraph ───────────────────────────────────────────
+    thread_id = f"ask_{uuid.uuid4().hex[:12]}"
 
-        if response.status_code == 200:
-            if hasattr(response.output.choices[0].message, 'content'):
-                content = response.output.choices[0].message.content
-                if isinstance(content, list):
-                    answer = content[0].get('text', str(content))
-                else:
-                    answer = content
-            else:
-                answer = response.output.text
+    result = run_vqa(
+        question=question,
+        image_path=saved_image_path,
+        image_url=image_url,
+        thread_id=thread_id,
+    )
 
-            return jsonify({
-                'success': True,
-                'answer': answer,
-                'has_rag_context': bool(context),
-                'rag_doc_count': len(rag_results),
-                'image_url': image_url,
-            })
-        else:
-            return jsonify({'error': f'API 调用失败: {response.code} - {response.message}'}), 500
-
-    except Exception as e:
-        return jsonify({'error': f'处理失败: {str(e)}'}), 500
+    return AskResponse(
+        answer=result["answer"],
+        has_rag_context=result["has_rag_context"],
+        rag_doc_count=result["rag_doc_count"],
+        image_url=image_url,
+        confidence=result["confidence"],
+        critique=result["critique"],
+        question_type=result["question_type"],
+        retry_count=result["retry_count"],
+    )
 
 
-# ============ 知识库管理 API ============
+# ══════════════════════════════════════════════════════════════════
+#  Routes — Graph introspection
+# ══════════════════════════════════════════════════════════════════
+@app.get("/api/graph/visualize")
+async def graph_visualize():
+    """Return the graph structure as JSON for debugging."""
+    from vqa_graph import vqa_graph
 
-@app.route('/api/knowledge/upload', methods=['POST'])
-def knowledge_upload():
-    if 'file' not in request.files:
-        return jsonify({'error': '没有上传文件'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': '没有选择文件'}), 400
+    graph_def = vqa_graph.get_graph()
+    return JSONResponse({
+        "nodes": list(graph_def.nodes.keys()),
+        "edges": [
+            {"source": e[0], "target": e[1]}
+            for e in graph_def.edges
+        ],
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Routes — Knowledge base management
+# ══════════════════════════════════════════════════════════════════
+@app.post("/api/knowledge/upload")
+async def knowledge_upload(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="没有选择文件")
     if not _allowed(file.filename, ALLOWED_DOC_EXT):
-        return jsonify({'error': f'不支持的格式，支持: {", ".join(sorted(ALLOWED_DOC_EXT))}'}), 400
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的格式，支持: {', '.join(sorted(ALLOWED_DOC_EXT))}",
+        )
 
-    safe_name = ''.join(c if c.isalnum() or c in '._-' else '_' for c in file.filename)
+    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in file.filename)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
-    filepath = os.path.join(app.config['DOCS_FOLDER'], unique_name)
-    file.save(filepath)
+    filepath = DOCS_DIR / unique_name
+
+    content = await file.read()
+    filepath.write_bytes(content)
 
     try:
-        result = rag.add_document(filepath)
-        if not result['success'] and os.path.exists(filepath):
-            os.remove(filepath)
-        return jsonify(result)
+        result = rag.add_document(str(filepath))
+        if not result.get("success") and filepath.exists():
+            filepath.unlink()
+        return result
     except Exception as e:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        return jsonify({'error': f'文档处理失败: {str(e)}'}), 500
+        if filepath.exists():
+            filepath.unlink()
+        raise HTTPException(status_code=500, detail=f"文档处理失败: {e}")
 
 
-@app.route('/api/knowledge/docs', methods=['GET'])
-def knowledge_docs():
-    return jsonify(rag.get_all_docs())
+@app.get("/api/knowledge/docs")
+async def knowledge_docs():
+    return rag.get_all_docs()
 
 
-@app.route('/api/knowledge/remove', methods=['POST'])
-def knowledge_remove():
-    data = request.get_json(silent=True) or {}
-    doc_id = data.get('doc_id')
+@app.post("/api/knowledge/remove")
+async def knowledge_remove(data: dict):
+    doc_id = data.get("doc_id")
     if not doc_id:
-        return jsonify({'error': '缺少 doc_id'}), 400
-    return jsonify(rag.remove_document(doc_id))
+        raise HTTPException(status_code=400, detail="缺少 doc_id")
+    return rag.remove_document(doc_id)
 
 
-@app.route('/api/knowledge/stats', methods=['GET'])
-def knowledge_stats():
-    return jsonify(rag.get_stats())
+@app.get("/api/knowledge/stats")
+async def knowledge_stats():
+    return rag.get_stats()
 
 
-if __name__ == '__main__':
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    os.makedirs(app.config['DOCS_FOLDER'], exist_ok=True)
-    app.run(host='0.0.0.0', port=5000, debug=False)
+# ══════════════════════════════════════════════════════════════════
+#  Entry point
+# ══════════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app:app", host="0.0.0.0", port=5000, reload=False)
